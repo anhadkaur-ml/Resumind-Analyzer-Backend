@@ -1,0 +1,21 @@
+# Python and Django generated files
+__pycache__/
+*.py[cod]
+*.sqlite3
+db.sqlite3
+media/
+staticfiles/
+
+# Local environments and secrets
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Tool and operating-system files
+.pytest_cache/
+.coverage
+.DS_Store
+.vscode/
+.idea/
