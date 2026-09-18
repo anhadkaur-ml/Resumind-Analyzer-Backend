@@ -22,4 +22,5 @@ urlpatterns = [
     # Keep authentication and resume features in separate application routers.
     path('api/auth/', include('accounts.urls')),
     path('api/resumes/', include('resumes.urls')),
+    path('api/interviews/', include('interviews.urls')),
 ]
