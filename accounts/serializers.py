@@ -26,7 +26,17 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "full_name", "email", "role")
+        fields = (
+            "id",
+            "full_name",
+            "email",
+            "role",
+            "email_notifications_enabled",
+            "email_resume_analysis",
+            "email_resume_builder",
+            "email_interview_results",
+        )
+        read_only_fields = ("id", "full_name", "email", "role")
 
     def get_full_name(self, user):
         # Fall back to username for accounts created without first/last names.

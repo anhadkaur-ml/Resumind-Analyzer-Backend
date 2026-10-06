@@ -10,6 +10,9 @@ class InterviewSession(models.Model):
         COMPLETED = "completed", "Completed"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="interview_sessions")
+    # Optional resume context personalizes questions while preserving the
+    # existing role-only interview flow.
+    builder_resume = models.ForeignKey("resumes.BuilderResume", null=True, blank=True, on_delete=models.SET_NULL, related_name="interview_sessions")
     interview_type = models.CharField(max_length=30)
     target_role = models.CharField(max_length=160)
     experience_level = models.CharField(max_length=80)

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import AskAIHistoryView, AskAIView, BuilderProfessionalSummaryView, BuilderResumeDetailView, BuilderResumeListCreateView, ResumeAnalysisDetailView, ResumeAnalysisDownloadView, ResumeAnalysisListCreateView, ResumeDashboardView, ResumeVersionDetailView, ResumeVersionDownloadView, ResumeVersionListCreateView
+from .views import AskAIHistoryView, AskAIView, BuilderProfessionalSummaryView, BuilderResumeAnalysisView, BuilderResumeDetailView, BuilderResumeListCreateView, CareerCopilotView, ResumeAnalysisDetailView, ResumeAnalysisDownloadView, ResumeAnalysisListCreateView, ResumeDashboardView, ResumeVersionDetailView, ResumeVersionDownloadView, ResumeVersionListCreateView
 
 app_name = "resumes"
 
@@ -12,6 +12,7 @@ urlpatterns = [
     # Overview statistics and report-aware AI coaching.
     path("dashboard/", ResumeDashboardView.as_view(), name="dashboard"),
     path("ask-ai/", AskAIView.as_view(), name="ask-ai"),
+    path("career-copilot/", CareerCopilotView.as_view(), name="career-copilot"),
     # GET restores one report's chat; DELETE clears that saved conversation.
     path("ask-ai/history/<int:analysis_id>/", AskAIHistoryView.as_view(), name="ask-ai-history"),
 
@@ -23,5 +24,6 @@ urlpatterns = [
     # Resume Builder drafts and generated resume content.
     path("builder/", BuilderResumeListCreateView.as_view(), name="builder-list-create"),
     path("builder/<int:pk>/", BuilderResumeDetailView.as_view(), name="builder-detail"),
+    path("builder/<int:pk>/analyze/", BuilderResumeAnalysisView.as_view(), name="builder-analyze"),
     path("builder/generate-professional-summary/", BuilderProfessionalSummaryView.as_view(), name="builder-professional-summary"),
 ]

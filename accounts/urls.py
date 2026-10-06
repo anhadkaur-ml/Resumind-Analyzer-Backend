@@ -1,4 +1,5 @@
 from django.urls import path
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import LoginView, NotificationListView, NotificationReadAllView, NotificationReadView, ProfileView, SignupView
 
@@ -9,6 +10,9 @@ urlpatterns = [
     # Authentication and current-user profile endpoints.
     path("signup/", SignupView.as_view(), name="signup"),
     path("login/", LoginView.as_view(), name="login"),
+    # Axios uses this endpoint to renew an expired access token without asking
+    # the employee to log in again during an interview.
+    path("token/refresh/", TokenRefreshView.as_view(), name="token-refresh"),
     path("profile/", ProfileView.as_view(), name="profile"),
 
     # Notification bell endpoints.

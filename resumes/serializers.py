@@ -1,10 +1,12 @@
 from pathlib import Path
 
+from django.core.files.base import ContentFile
 from rest_framework import serializers
 
 from .analysis import analyze_resume, extract_resume_text
 from .models import BuilderResume, ChatMessage, ResumeAnalysis, ResumeVersion
 from accounts.models import Notification
+from accounts.email_service import send_analysis_ready_email, send_builder_completed_email
 
 
 class AskAIRequestSerializer(serializers.Serializer):
@@ -14,6 +16,25 @@ class AskAIRequestSerializer(serializers.Serializer):
     # Identifies the exact analysis report currently open in the frontend.
     # The view also checks that this report belongs to the logged-in employee.
     analysis_id = serializers.IntegerField(min_value=1)
+
+
+class CareerCopilotRequestSerializer(serializers.Serializer):
+    """Validate a general career question and a small client conversation window."""
+
+    question = serializers.CharField(max_length=2000, trim_whitespace=True)
+    history = serializers.ListField(
+        child=serializers.DictField(), required=False, max_length=8
+    )
+
+    def validate_history(self, history):
+        cleaned = []
+        for message in history:
+            role = message.get("role")
+            content = str(message.get("content", "")).strip()
+            if role not in {"user", "assistant"} or not content:
+                raise serializers.ValidationError("Each history item needs a valid role and content.")
+            cleaned.append({"role": role, "content": content[:2000]})
+        return cleaned
 
 
 class ProfessionalSummaryRequestSerializer(serializers.Serializer):
@@ -83,6 +104,63 @@ class ResumeAnalysisCreateSerializer(serializers.ModelSerializer):
             kind="resume_analysis",
             link=f"/employee/reports/{analysis.id}",
         )
+        send_analysis_ready_email(analysis)
+        return analysis
+
+
+class BuilderResumeAnalysisSerializer(serializers.Serializer):
+    """Analyze a saved Builder resume without asking the user to upload it again."""
+
+    job_title = serializers.CharField(max_length=180, trim_whitespace=True)
+    job_description = serializers.CharField(required=False, allow_blank=True, trim_whitespace=True)
+
+    @staticmethod
+    def builder_text(builder):
+        """Convert all editable Builder sections into readable analysis text."""
+
+        education = "\n".join(
+            " | ".join(str(entry.get(key, "")).strip() for key in ("education_type", "degree", "field", "institution", "start_year", "end_year") if str(entry.get(key, "")).strip())
+            for entry in builder.education_entries if isinstance(entry, dict)
+        ) or builder.education
+        skills = ", ".join(builder.skill_items) or builder.skills
+        projects = "\n".join(
+            " | ".join(str(entry.get(key, "")).strip() for key in ("name", "technologies", "description", "link") if str(entry.get(key, "")).strip())
+            for entry in builder.project_entries if isinstance(entry, dict)
+        ) or builder.projects
+        return "\n\n".join(filter(None, (
+            builder.full_name,
+            f"Target role: {builder.target_role}",
+            f"Contact: {builder.email} {builder.phone} {builder.location}",
+            f"Professional Summary\n{builder.summary}",
+            f"Experience\n{builder.job_title} | {builder.company} | {builder.period}\n{builder.experience}",
+            f"Education\n{education}",
+            f"Skills\n{skills}",
+            f"Projects\n{projects}",
+        )))
+
+    def create(self, validated_data):
+        builder = self.context["builder"]
+        text = self.builder_text(builder)
+        if not text.strip():
+            raise serializers.ValidationError("Add resume information before starting an analysis.")
+        scores = analyze_resume(text, validated_data["job_title"], validated_data.get("job_description", ""))
+        safe_title = "".join(character if character.isalnum() or character in "-_" else "_" for character in builder.title).strip("_") or "builder_resume"
+        document = ContentFile(text.encode("utf-8"), name=f"{safe_title}.txt")
+        analysis = ResumeAnalysis.objects.create(
+            user=self.context["request"].user,
+            resume_file=document,
+            original_filename=document.name,
+            **validated_data,
+            **scores,
+        )
+        Notification.objects.create(
+            user=analysis.user,
+            title="Resume analysis ready",
+            message=f"{builder.title} scored {analysis.overall_score}/100 for {analysis.job_title}.",
+            kind="resume_analysis",
+            link=f"/employee/reports/{analysis.id}",
+        )
+        send_analysis_ready_email(analysis)
         return analysis
 
 
@@ -195,9 +273,16 @@ class BuilderResumeSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         values = {**validated_data}
         values["completion"] = 100 if values.get("status") == BuilderResume.Status.COMPLETED else self._completion(values)
-        return BuilderResume.objects.create(user=self.context["request"].user, **values)
+        resume = BuilderResume.objects.create(user=self.context["request"].user, **values)
+        if resume.status == BuilderResume.Status.COMPLETED:
+            send_builder_completed_email(resume)
+        return resume
 
     def update(self, instance, validated_data):
+        previous_status = instance.status
         merged = {field: validated_data.get(field, getattr(instance, field)) for field in self.Meta.fields if hasattr(instance, field)}
         validated_data["completion"] = 100 if merged["status"] == BuilderResume.Status.COMPLETED else self._completion(merged)
-        return super().update(instance, validated_data)
+        resume = super().update(instance, validated_data)
+        if previous_status != BuilderResume.Status.COMPLETED and resume.status == BuilderResume.Status.COMPLETED:
+            send_builder_completed_email(resume)
+        return resume

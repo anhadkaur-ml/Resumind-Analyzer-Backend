@@ -190,6 +190,21 @@ class ResumeAnalysisApiTests(TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertFalse(BuilderResume.objects.filter(id=resume_id).exists())
 
+    @patch("resumes.serializers.analyze_resume")
+    def test_builder_resume_can_be_analyzed_without_uploading_again(self, mocked_analysis):
+        mocked_analysis.return_value = {"overall_score": 82, "impact_score": 80, "clarity_score": 84, "ats_score": 82, "status": "Strong", "recommendations": ["Add metrics."], "detailed_report": {"summary": "Strong match."}}
+        builder = BuilderResume.objects.create(user=self.user, title="Python Resume", target_role="Python Developer", full_name="Test Employee", email="employee@example.com", summary="Python developer", skill_items=["Python", "Django"])
+        response = self.client.post(
+            f"/api/resumes/builder/{builder.id}/analyze/",
+            {"job_title": "Senior Python Developer", "job_description": "Python Django REST APIs"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["job_title"], "Senior Python Developer")
+        self.assertEqual(response.data["overall_score"], 82)
+        self.assertTrue(ResumeAnalysis.objects.filter(user=self.user, original_filename="Python_Resume.txt").exists())
+        self.assertIn("Skills\nPython, Django", mocked_analysis.call_args.args[0])
+
     @patch("resumes.views.generate_professional_summary", return_value=("Backend developer skilled in Python and Django.", "test"))
     def test_builder_generates_professional_summary(self, mocked_generate):
         response = self.client.post(
@@ -200,3 +215,23 @@ class ResumeAnalysisApiTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("Backend developer", response.data["summary"])
         self.assertIn("Target role: Backend Developer", mocked_generate.call_args.args[0])
+
+    @patch("resumes.views.ask_career_copilot", return_value="Focus on one role, identify skill gaps, and build a targeted project.")
+    def test_career_copilot_returns_groq_guidance(self, mocked_copilot):
+        response = self.client.post(
+            "/api/resumes/career-copilot/",
+            {"question": "How should I plan my next career move?", "history": []},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["provider"], "groq")
+        mocked_copilot.assert_called_once()
+
+    @patch("resumes.views.ask_career_copilot", return_value=None)
+    def test_career_copilot_returns_retryable_error(self, _mocked_copilot):
+        response = self.client.post(
+            "/api/resumes/career-copilot/",
+            {"question": "Help me prepare."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 503)

@@ -53,6 +53,13 @@ class ProfileView(APIView):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def patch(self, request):
+        # Partial updates allow the Settings page to save only preference fields.
+        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class NotificationListView(APIView):
     """Return the current user's latest notifications and unread total."""

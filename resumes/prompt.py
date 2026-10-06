@@ -19,6 +19,13 @@ CHAT_SYSTEM_PROMPT = (
     "plainly and suggest what the user can add. Keep answers focused and under 160 words."
 )
 
+CAREER_COPILOT_SYSTEM_PROMPT = (
+    "You are Resumind Career Copilot, a practical and encouraging career coach. "
+    "Answer the user's exact question with clear, realistic next steps. Do not invent "
+    "personal experience or qualifications. Ask one concise follow-up question only when "
+    "important information is missing. Use short paragraphs or bullets and stay under 220 words."
+)
+
 
 def build_analysis_prompt(text, job_title, job_description):
     """Insert one resume and target role into the strict analysis JSON contract."""
@@ -80,3 +87,11 @@ def build_professional_summary_messages(context):
         },
         {"role": "user", "content": context[:10000]},
     ]
+
+
+def build_career_copilot_messages(question, history=None):
+    """Build a bounded general career-coaching conversation for Groq."""
+    messages = [{"role": "system", "content": CAREER_COPILOT_SYSTEM_PROMPT}]
+    messages.extend((history or [])[-8:])
+    messages.append({"role": "user", "content": question})
+    return messages

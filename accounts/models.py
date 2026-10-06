@@ -16,6 +16,11 @@ class User(AbstractUser):
         choices=Role.choices,
         default=Role.EMPLOYEE,
     )
+    # Users can disable all workflow emails or individual email categories.
+    email_notifications_enabled = models.BooleanField(default=True)
+    email_resume_analysis = models.BooleanField(default=True)
+    email_resume_builder = models.BooleanField(default=True)
+    email_interview_results = models.BooleanField(default=True)
 
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"

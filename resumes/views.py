@@ -1,5 +1,6 @@
 import json
 
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.parsers import FormParser, MultiPartParser
 from django.http import FileResponse
@@ -7,8 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import BuilderResume, ChatConversation, ChatMessage, ResumeAnalysis, ResumeVersion
-from .serializers import AskAIRequestSerializer, BuilderResumeSerializer, ChatMessageSerializer, ProfessionalSummaryRequestSerializer, ResumeAnalysisCreateSerializer, ResumeAnalysisSerializer, ResumeVersionCreateSerializer, ResumeVersionSerializer
-from .service import ask_groq, generate_professional_summary
+from .serializers import AskAIRequestSerializer, BuilderResumeAnalysisSerializer, BuilderResumeSerializer, CareerCopilotRequestSerializer, ChatMessageSerializer, ProfessionalSummaryRequestSerializer, ResumeAnalysisCreateSerializer, ResumeAnalysisSerializer, ResumeVersionCreateSerializer, ResumeVersionSerializer
+from .service import ask_career_copilot, ask_groq, generate_professional_summary
 
 
 class IsEmployee(permissions.BasePermission):
@@ -133,6 +134,19 @@ class BuilderResumeDetailView(generics.RetrieveUpdateDestroyAPIView):
         return BuilderResume.objects.filter(user=self.request.user)
 
 
+class BuilderResumeAnalysisView(APIView):
+    """Create an analysis directly from one saved, employee-owned Builder resume."""
+
+    permission_classes = (IsEmployee,)
+
+    def post(self, request, pk):
+        builder = get_object_or_404(BuilderResume, pk=pk, user=request.user)
+        serializer = BuilderResumeAnalysisSerializer(data=request.data, context={"request": request, "builder": builder})
+        serializer.is_valid(raise_exception=True)
+        analysis = serializer.save()
+        return Response(ResumeAnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED)
+
+
 class BuilderProfessionalSummaryView(APIView):
     """Generate the Professional Summary section from current builder facts."""
 
@@ -156,6 +170,26 @@ class BuilderProfessionalSummaryView(APIView):
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         return Response({"summary": summary, "provider": provider})
+
+
+class CareerCopilotView(APIView):
+    """Provide authenticated, general career coaching through Groq."""
+
+    permission_classes = (IsEmployee,)
+
+    def post(self, request):
+        serializer = CareerCopilotRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        answer = ask_career_copilot(
+            serializer.validated_data["question"],
+            serializer.validated_data.get("history", []),
+        )
+        if not answer:
+            return Response(
+                {"detail": "Career Copilot is temporarily unavailable. Please try again shortly."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"answer": answer, "provider": "groq"})
 
 
 class ResumeDashboardView(APIView):

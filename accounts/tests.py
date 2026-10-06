@@ -47,9 +47,44 @@ class AuthenticationFlowTests(TestCase):
         self.assertEqual(profile_response.data["email"], "recruiter@example.com")
         self.assertEqual(profile_response.data["role"], "hr")
 
+        # The frontend interceptor uses the refresh token to renew access after
+        # a long-running interview page has been left open.
+        refresh_response = self.client.post(
+            "/api/auth/token/refresh/",
+            {"refresh": login_response.data["refresh"]},
+            format="json",
+        )
+        self.assertEqual(refresh_response.status_code, 200)
+        self.assertIn("access", refresh_response.data)
+
     def test_profile_requires_authentication(self):
         response = self.client.get(self.profile_url)
         self.assertEqual(response.status_code, 401)
+
+    def test_user_can_update_email_notification_preferences(self):
+        user = User.objects.create_user(
+            username="preferences",
+            email="preferences@example.com",
+            password="SecurePass482!",
+        )
+        self.client.force_authenticate(user)
+
+        response = self.client.patch(
+            self.profile_url,
+            {
+                "email_notifications_enabled": True,
+                "email_resume_analysis": False,
+                "email_resume_builder": True,
+                "email_interview_results": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertFalse(user.email_resume_analysis)
+        self.assertTrue(user.email_resume_builder)
+        self.assertFalse(user.email_interview_results)
 
     def test_signup_rejects_mismatched_passwords(self):
         response = self.client.post(

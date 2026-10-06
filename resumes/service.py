@@ -5,7 +5,7 @@ import os
 
 from groq import Groq
 
-from .prompt import ANALYSIS_SYSTEM_PROMPT, build_analysis_prompt, build_chat_messages, build_professional_summary_messages
+from .prompt import ANALYSIS_SYSTEM_PROMPT, build_analysis_prompt, build_career_copilot_messages, build_chat_messages, build_professional_summary_messages
 
 
 def request_resume_analysis(text, job_title, job_description):
@@ -72,3 +72,19 @@ def generate_professional_summary(context):
         return response.choices[0].message.content.strip(), "groq"
     except Exception:
         return None, "unavailable"
+
+
+def ask_career_copilot(question, history=None):
+    """Return focused career guidance without exposing the Groq key to the client."""
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        response = Groq(api_key=api_key).chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
+            messages=build_career_copilot_messages(question, history),
+            temperature=0.45,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception:
+        return None
