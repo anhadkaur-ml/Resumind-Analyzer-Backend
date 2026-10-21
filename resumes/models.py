@@ -68,6 +68,9 @@ class BuilderResume(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="builder_resumes")
     title = models.CharField(max_length=180, default="Untitled Resume")
     target_role = models.CharField(max_length=180, blank=True)
+    # Target-company data is separate from the candidate's previous employer.
+    target_company = models.CharField(max_length=180, blank=True)
+    job_description = models.TextField(blank=True)
     template = models.CharField(max_length=80, default="Modern ATS")
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     completion = models.PositiveSmallIntegerField(default=0)
@@ -124,6 +127,48 @@ class ChatMessage(models.Model):
 
     # Deleting a conversation or its analysis also removes its saved messages.
     conversation = models.ForeignKey(ChatConversation, on_delete=models.CASCADE, related_name="messages")
+    role = models.CharField(max_length=20, choices=Role.choices)
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("created_at", "id")
+
+    def __str__(self):
+        return f"{self.role}: {self.content[:50]}"
+
+
+class CareerConversation(models.Model):
+    """A persistent general Career Copilot conversation owned by one employee."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="career_conversations",
+    )
+    title = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+
+    def __str__(self):
+        return f"{self.user} — {self.title}"
+
+
+class CareerMessage(models.Model):
+    """One user or assistant message in a persistent Career Copilot chat."""
+
+    class Role(models.TextChoices):
+        USER = "user", "User"
+        ASSISTANT = "assistant", "Assistant"
+
+    conversation = models.ForeignKey(
+        CareerConversation,
+        on_delete=models.CASCADE,
+        related_name="messages",
+    )
     role = models.CharField(max_length=20, choices=Role.choices)
     content = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

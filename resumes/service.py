@@ -5,7 +5,7 @@ import os
 
 from groq import Groq
 
-from .prompt import ANALYSIS_SYSTEM_PROMPT, build_analysis_prompt, build_career_copilot_messages, build_chat_messages, build_professional_summary_messages
+from .prompt import ANALYSIS_SYSTEM_PROMPT, build_analysis_prompt, build_career_copilot_messages, build_chat_messages, build_job_description_messages, build_professional_summary_messages, build_resume_tailoring_messages
 
 
 def request_resume_analysis(text, job_title, job_description):
@@ -70,6 +70,47 @@ def generate_professional_summary(context):
             temperature=0.4,
         )
         return response.choices[0].message.content.strip(), "groq"
+    except Exception:
+        return None, "unavailable"
+
+
+def generate_job_description(target_role, target_company=""):
+    """Generate a reviewable job-description draft for Resume Builder."""
+
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None, "local"
+    try:
+        response = Groq(api_key=api_key).chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
+            messages=build_job_description_messages(target_role, target_company),
+            temperature=0.35,
+        )
+        return response.choices[0].message.content.strip(), "groq"
+    except Exception:
+        return None, "unavailable"
+
+
+def tailor_builder_content(context):
+    """Return validated, fact-preserving resume suggestions as structured data."""
+
+    api_key = os.getenv("GROQ_API_KEY", "").strip()
+    if not api_key:
+        return None, "local"
+    try:
+        response = Groq(api_key=api_key).chat.completions.create(
+            model=os.getenv("GROQ_MODEL", "openai/gpt-oss-20b"),
+            messages=build_resume_tailoring_messages(context),
+            response_format={"type": "json_object"},
+            temperature=0.25,
+        )
+        result = json.loads(response.choices[0].message.content)
+        if not isinstance(result, dict) or not isinstance(result.get("summary"), str):
+            return None, "unavailable"
+        skills = result.get("skills", [])
+        result["skills"] = [str(skill).strip() for skill in skills if str(skill).strip()] if isinstance(skills, list) else []
+        result["experience"] = str(result.get("experience", "")).strip()
+        return result, "groq"
     except Exception:
         return None, "unavailable"
 

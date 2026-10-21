@@ -7,9 +7,9 @@ from django.http import FileResponse
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import BuilderResume, ChatConversation, ChatMessage, ResumeAnalysis, ResumeVersion
-from .serializers import AskAIRequestSerializer, BuilderResumeAnalysisSerializer, BuilderResumeSerializer, CareerCopilotRequestSerializer, ChatMessageSerializer, ProfessionalSummaryRequestSerializer, ResumeAnalysisCreateSerializer, ResumeAnalysisSerializer, ResumeVersionCreateSerializer, ResumeVersionSerializer
-from .service import ask_career_copilot, ask_groq, generate_professional_summary
+from .models import BuilderResume, CareerConversation, CareerMessage, ChatConversation, ChatMessage, ResumeAnalysis, ResumeVersion
+from .serializers import AskAIRequestSerializer, BuilderResumeAnalysisSerializer, BuilderResumeSerializer, CareerConversationSerializer, CareerCopilotRequestSerializer, ChatMessageSerializer, JobDescriptionRequestSerializer, ProfessionalSummaryRequestSerializer, ResumeAnalysisCreateSerializer, ResumeAnalysisSerializer, ResumeVersionCreateSerializer, ResumeVersionSerializer, TailorResumeRequestSerializer
+from .service import ask_career_copilot, ask_groq, generate_job_description, generate_professional_summary, tailor_builder_content
 
 
 class IsEmployee(permissions.BasePermission):
@@ -172,6 +172,64 @@ class BuilderProfessionalSummaryView(APIView):
         return Response({"summary": summary, "provider": provider})
 
 
+class BuilderJobDescriptionView(APIView):
+    """Draft a job description from the user's selected role and company."""
+
+    permission_classes = (IsEmployee,)
+
+    def post(self, request):
+        serializer = JobDescriptionRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        description, provider = generate_job_description(
+            values["target_role"], values.get("target_company", "")
+        )
+        if not description:
+            return Response(
+                {"detail": "Job-description generation is temporarily unavailable. Please try again."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({"job_description": description, "provider": provider})
+
+
+class BuilderTailorContentView(APIView):
+    """Tailor supplied resume facts to a reviewed job description."""
+
+    permission_classes = (IsEmployee,)
+
+    def post(self, request):
+        serializer = TailorResumeRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        context = (
+            f"Target role: {values['target_role']}\n"
+            f"Target company: {values.get('target_company') or 'Not specified'}\n"
+            f"Job description:\n{values['job_description']}\n\n"
+            f"Candidate summary: {values.get('summary') or 'Not supplied'}\n"
+            f"Candidate skills: {', '.join(values.get('skills', [])) or 'Not supplied'}\n"
+            f"Candidate experience:\n{values.get('experience') or 'Not supplied'}\n"
+            f"Candidate projects:\n{values.get('projects') or 'Not supplied'}"
+        )
+        tailored, provider = tailor_builder_content(context)
+        if not tailored:
+            return Response(
+                {"detail": "Resume tailoring is temporarily unavailable. Your existing content has not been changed."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        # Enforce the no-invention rule server-side for skills instead of
+        # relying only on the AI prompt to follow it.
+        supplied_skills = {
+            skill.casefold(): skill for skill in values.get("skills", [])
+        }
+        tailored["skills"] = [
+            supplied_skills[skill.casefold()]
+            for skill in tailored.get("skills", [])
+            if skill.casefold() in supplied_skills
+        ]
+        # The browser applies these suggestions only after a successful response.
+        return Response({**tailored, "provider": provider})
+
+
 class CareerCopilotView(APIView):
     """Provide authenticated, general career coaching through Groq."""
 
@@ -180,16 +238,59 @@ class CareerCopilotView(APIView):
     def post(self, request):
         serializer = CareerCopilotRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        answer = ask_career_copilot(
-            serializer.validated_data["question"],
-            serializer.validated_data.get("history", []),
-        )
+        question = serializer.validated_data["question"]
+        conversation_id = serializer.validated_data.get("conversation_id")
+        conversation = None
+        history = []
+        if conversation_id:
+            # Ownership filtering prevents one employee from reading or extending another chat.
+            conversation = get_object_or_404(
+                CareerConversation, pk=conversation_id, user=request.user
+            )
+            history = list(conversation.messages.values("role", "content"))[-8:]
+        answer = ask_career_copilot(question, history)
         if not answer:
             return Response(
                 {"detail": "Career Copilot is temporarily unavailable. Please try again shortly."},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
-        return Response({"answer": answer, "provider": "groq"})
+        if conversation is None:
+            conversation = CareerConversation.objects.create(
+                user=request.user,
+                title=question[:117] + ("..." if len(question) > 117 else ""),
+            )
+        CareerMessage.objects.create(
+            conversation=conversation, role=CareerMessage.Role.USER, content=question
+        )
+        CareerMessage.objects.create(
+            conversation=conversation, role=CareerMessage.Role.ASSISTANT, content=answer
+        )
+        # Message creation does not update the parent automatically, so touch it
+        # to keep the most recently active conversation at the top of history.
+        conversation.save(update_fields=("updated_at",))
+        return Response(
+            {"answer": answer, "provider": "groq", "conversation": CareerConversationSerializer(conversation).data}
+        )
+
+
+class CareerConversationListView(generics.ListAPIView):
+    """List the authenticated employee's saved Career Copilot conversations."""
+
+    permission_classes = (IsEmployee,)
+    serializer_class = CareerConversationSerializer
+
+    def get_queryset(self):
+        return CareerConversation.objects.filter(user=self.request.user).prefetch_related("messages")
+
+
+class CareerConversationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Reopen, rename, or delete one employee-owned Career Copilot conversation."""
+
+    permission_classes = (IsEmployee,)
+    serializer_class = CareerConversationSerializer
+
+    def get_queryset(self):
+        return CareerConversation.objects.filter(user=self.request.user).prefetch_related("messages")
 
 
 class ResumeDashboardView(APIView):

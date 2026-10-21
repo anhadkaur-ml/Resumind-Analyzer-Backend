@@ -89,6 +89,48 @@ def build_professional_summary_messages(context):
     ]
 
 
+def build_job_description_messages(target_role, target_company=""):
+    """Create a realistic draft job description for a selected target."""
+
+    company_context = target_company or "an unspecified company"
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a recruiting assistant. Draft a concise, realistic job description "
+                "for resume-tailoring purposes. Include a short role overview, 5-7 key "
+                "responsibilities, and 5-7 skills or qualifications. Do not claim knowledge of "
+                "a company's actual vacancy, culture, benefits, salary, or private hiring needs. "
+                "Return plain text with clear headings and bullets."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Target role: {target_role}\nTarget company: {company_context}",
+        },
+    ]
+
+
+def build_resume_tailoring_messages(context):
+    """Ask AI to tailor only facts already present in the candidate's resume."""
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are an ATS resume editor. Tailor the candidate content to the supplied job "
+                "description without inventing employers, dates, education, skills, metrics, or "
+                "achievements. Return only valid JSON with this exact structure: "
+                '{"summary":"", "skills":[], "experience":""}. '
+                "The summary must be 3-4 sentences. Skills must be a relevant subset of the supplied "
+                "candidate skills, never newly invented skills. Rewrite experience for relevance "
+                "while preserving every fact; if no experience is supplied, return an empty string."
+            ),
+        },
+        {"role": "user", "content": context[:20000]},
+    ]
+
+
 def build_career_copilot_messages(question, history=None):
     """Build a bounded general career-coaching conversation for Groq."""
     messages = [{"role": "system", "content": CAREER_COPILOT_SYSTEM_PROMPT}]

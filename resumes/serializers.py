@@ -4,7 +4,7 @@ from django.core.files.base import ContentFile
 from rest_framework import serializers
 
 from .analysis import analyze_resume, extract_resume_text
-from .models import BuilderResume, ChatMessage, ResumeAnalysis, ResumeVersion
+from .models import BuilderResume, CareerConversation, CareerMessage, ChatMessage, ResumeAnalysis, ResumeVersion
 from accounts.models import Notification
 from accounts.email_service import send_analysis_ready_email, send_builder_completed_email
 
@@ -19,22 +19,10 @@ class AskAIRequestSerializer(serializers.Serializer):
 
 
 class CareerCopilotRequestSerializer(serializers.Serializer):
-    """Validate a general career question and a small client conversation window."""
+    """Validate a question and optionally identify an existing owned conversation."""
 
     question = serializers.CharField(max_length=2000, trim_whitespace=True)
-    history = serializers.ListField(
-        child=serializers.DictField(), required=False, max_length=8
-    )
-
-    def validate_history(self, history):
-        cleaned = []
-        for message in history:
-            role = message.get("role")
-            content = str(message.get("content", "")).strip()
-            if role not in {"user", "assistant"} or not content:
-                raise serializers.ValidationError("Each history item needs a valid role and content.")
-            cleaned.append({"role": role, "content": content[:2000]})
-        return cleaned
+    conversation_id = serializers.IntegerField(required=False, allow_null=True, min_value=1)
 
 
 class ProfessionalSummaryRequestSerializer(serializers.Serializer):
@@ -52,6 +40,30 @@ class ProfessionalSummaryRequestSerializer(serializers.Serializer):
         return attrs
 
 
+class JobDescriptionRequestSerializer(serializers.Serializer):
+    """Validate the target used to draft a job description."""
+
+    target_role = serializers.CharField(max_length=180, trim_whitespace=True)
+    target_company = serializers.CharField(max_length=180, required=False, allow_blank=True, trim_whitespace=True)
+
+
+class TailorResumeRequestSerializer(serializers.Serializer):
+    """Validate candidate facts and the job description used for tailoring."""
+
+    target_role = serializers.CharField(max_length=180, trim_whitespace=True)
+    target_company = serializers.CharField(max_length=180, required=False, allow_blank=True, trim_whitespace=True)
+    job_description = serializers.CharField(max_length=12000, trim_whitespace=True)
+    summary = serializers.CharField(max_length=3000, required=False, allow_blank=True)
+    skills = serializers.ListField(child=serializers.CharField(max_length=100), required=False)
+    experience = serializers.CharField(max_length=8000, required=False, allow_blank=True)
+    projects = serializers.CharField(max_length=8000, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if not any((attrs.get("summary"), attrs.get("skills"), attrs.get("experience"), attrs.get("projects"))):
+            raise serializers.ValidationError("Add a summary, skill, experience, or project before tailoring the resume.")
+        return attrs
+
+
 
 class ChatMessageSerializer(serializers.ModelSerializer):
     """Read-only message format used when restoring report chat history."""
@@ -61,6 +73,33 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         # Clients can load messages, but messages are created only by AskAIView.
         fields = ("id", "role", "content", "created_at")
         read_only_fields = fields
+
+
+class CareerMessageSerializer(serializers.ModelSerializer):
+    """Read-only Career Copilot message returned when reopening a conversation."""
+
+    class Meta:
+        model = CareerMessage
+        fields = ("id", "role", "content", "created_at")
+        read_only_fields = fields
+
+
+class CareerConversationSerializer(serializers.ModelSerializer):
+    """Return conversation metadata together with its ordered messages."""
+
+    messages = CareerMessageSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = CareerConversation
+        fields = ("id", "title", "messages", "created_at", "updated_at")
+        # Only the title can be edited; ownership and messages are server-managed.
+        read_only_fields = ("id", "messages", "created_at", "updated_at")
+
+    def validate_title(self, value):
+        title = value.strip()
+        if not title:
+            raise serializers.ValidationError("Conversation title cannot be empty.")
+        return title
 
 
 class ResumeAnalysisSerializer(serializers.ModelSerializer):
@@ -130,6 +169,8 @@ class BuilderResumeAnalysisSerializer(serializers.Serializer):
         return "\n\n".join(filter(None, (
             builder.full_name,
             f"Target role: {builder.target_role}",
+            f"Target company: {builder.target_company}" if builder.target_company else "",
+            f"Target job description:\n{builder.job_description}" if builder.job_description else "",
             f"Contact: {builder.email} {builder.phone} {builder.location}",
             f"Professional Summary\n{builder.summary}",
             f"Experience\n{builder.job_title} | {builder.company} | {builder.period}\n{builder.experience}",
@@ -200,7 +241,7 @@ class BuilderResumeSerializer(serializers.ModelSerializer):
     class Meta:
         model = BuilderResume
         fields = (
-            "id", "title", "target_role", "template", "status", "completion",
+            "id", "title", "target_role", "target_company", "job_description", "template", "status", "completion",
             "full_name", "email", "phone", "location", "summary", "job_title",
             "company", "period", "experience", "education", "skills", "projects",
             "education_entries", "skill_items", "project_entries",

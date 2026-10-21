@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import AskAIHistoryView, AskAIView, BuilderProfessionalSummaryView, BuilderResumeAnalysisView, BuilderResumeDetailView, BuilderResumeListCreateView, CareerCopilotView, ResumeAnalysisDetailView, ResumeAnalysisDownloadView, ResumeAnalysisListCreateView, ResumeDashboardView, ResumeVersionDetailView, ResumeVersionDownloadView, ResumeVersionListCreateView
+from .views import AskAIHistoryView, AskAIView, BuilderJobDescriptionView, BuilderProfessionalSummaryView, BuilderResumeAnalysisView, BuilderResumeDetailView, BuilderResumeListCreateView, BuilderTailorContentView, CareerConversationDetailView, CareerConversationListView, CareerCopilotView, ResumeAnalysisDetailView, ResumeAnalysisDownloadView, ResumeAnalysisListCreateView, ResumeDashboardView, ResumeVersionDetailView, ResumeVersionDownloadView, ResumeVersionListCreateView
 
 app_name = "resumes"
 
@@ -13,6 +13,8 @@ urlpatterns = [
     path("dashboard/", ResumeDashboardView.as_view(), name="dashboard"),
     path("ask-ai/", AskAIView.as_view(), name="ask-ai"),
     path("career-copilot/", CareerCopilotView.as_view(), name="career-copilot"),
+    path("career-copilot/conversations/", CareerConversationListView.as_view(), name="career-conversation-list"),
+    path("career-copilot/conversations/<int:pk>/", CareerConversationDetailView.as_view(), name="career-conversation-detail"),
     # GET restores one report's chat; DELETE clears that saved conversation.
     path("ask-ai/history/<int:analysis_id>/", AskAIHistoryView.as_view(), name="ask-ai-history"),
 
@@ -26,4 +28,6 @@ urlpatterns = [
     path("builder/<int:pk>/", BuilderResumeDetailView.as_view(), name="builder-detail"),
     path("builder/<int:pk>/analyze/", BuilderResumeAnalysisView.as_view(), name="builder-analyze"),
     path("builder/generate-professional-summary/", BuilderProfessionalSummaryView.as_view(), name="builder-professional-summary"),
+    path("builder/generate-job-description/", BuilderJobDescriptionView.as_view(), name="builder-job-description"),
+    path("builder/tailor-content/", BuilderTailorContentView.as_view(), name="builder-tailor-content"),
 ]
